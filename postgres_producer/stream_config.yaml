@@ -1,0 +1,25 @@
+postgresConf:
+  host: "localhost"
+  port: "5432"
+  database: "postgres"
+  user: "postgres"
+  sslmode: disable
+kafkaConf:
+  brokers: "127.0.0.1:9092"
+  version: "2.5.0"
+  waitMS: 500
+streams:
+  - postgres:
+      channel: customer
+      minReconnectInterval: 3
+      maxReconnectInterval: 15
+    kafka:
+      topic: customer_count
+      key: ""
+  - postgres:
+      channel: order
+      minReconnectInterval: 3
+      maxReconnectInterval: 15
+    kafka:
+      topic: order_count
+      key: ""
