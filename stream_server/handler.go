@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/rs/zerolog/log"
 )
 
 // GetHealth just returns 200 if is accessible
@@ -47,8 +46,21 @@ func (api *API) StreamMessages(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// check if that Kafka consumer has been started for the topic
-	api.reqLogTrace(r, "subscribing client to topic")
+	api.reqLogTrace(r, "subscribing client to topic "+topic)
 	api.Kafka.Subscribe(&rc.ID, &topic)
+
+	var b []byte
+	var err error
+	switch topic {
+	case "customer_count":
+		b, err = api.getCustomerData(r)
+	case "order_count":
+		b, err = api.getOrderData(r)
+	}
+	if err != nil {
+		api.reqLogError(r, err.Error())
+		r.Context().Done()
+	}
 
 	// Set the headers related to event streaming.
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -56,42 +68,7 @@ func (api *API) StreamMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	var res []struct {
-		X time.Time `json:"x" gorm:"column:x"`
-		Y int       `json:"y" gorm:"column:y"`
-	}
-	gMin, ok := r.URL.Query()["groupMinute"]
-	if !ok {
-		api.reqLogInfo(r, "groupMinute query parameter not found, defaulting to 1")
-		gMin = []string{"1"}
-	}
-	groupMinute, err := strconv.Atoi(gMin[0])
-	if err != nil {
-		api.reqLogError(r, "error converting groupMinute "+vars["groupMinute"]+" to integer: "+err.Error())
-	}
-	err = api.dm.Raw(fmt.Sprintf(`
-select ts x, sum(n) y
-from (
-	select
-		date_key + make_time(
-			extract(hour from date_key + time_key)::int,
-			cast(floor(extract(minute from date_key + time_key) / %d) * %d as int),
-			0
-		) ts
-		,n
-	from mart.customer_fact cf2
-) t
-group by ts
-order by ts`, groupMinute, groupMinute)).Scan(&res).Error
-	if err != nil {
-		api.reqLogError(r, err.Error())
-	}
-
-	b, err := json.Marshal(&res)
-	if err != nil {
-		api.reqLogError(r, err.Error())
-	}
-	log.Trace().Msg("initial data: " + string(b))
+	// log.Trace().Msg("initial data: " + string(b))
 	fmt.Fprintf(w, "data: %s\n\n", string(b))
 	f.Flush()
 
@@ -119,4 +96,92 @@ order by ts`, groupMinute, groupMinute)).Scan(&res).Error
 
 	// Done.
 	api.reqLogTrace(r, "Finished HTTP request at %s", r.URL.Path)
+}
+
+func (api *API) getCustomerData(r *http.Request) ([]byte, error) {
+	var res []struct {
+		X time.Time `json:"x" gorm:"column:x"`
+		Y int       `json:"y" gorm:"column:y"`
+	}
+	gMin, ok := r.URL.Query()["groupMinute"]
+	if !ok {
+		api.reqLogInfo(r, "groupMinute query parameter not found, defaulting to 1")
+		gMin = []string{"1"}
+	}
+	groupMinute, err := strconv.Atoi(gMin[0])
+	if err != nil {
+		api.reqLogError(r, "error converting groupMinute "+gMin[0]+" to integer: "+err.Error())
+		return nil, err
+	}
+
+	err = api.dm.Raw(fmt.Sprintf(`
+select ts x, sum(n) y
+from (
+	select
+		date_key + make_time(
+			extract(hour from date_key + time_key)::int,
+			cast(floor(extract(minute from date_key + time_key) / %d) * %d as int),
+			0
+		) ts
+		,n
+	from mart.customer_fact cf2
+) t
+group by ts
+order by ts`, groupMinute, groupMinute)).Scan(&res).Error
+	if err != nil {
+		api.reqLogError(r, err.Error())
+		return nil, err
+	}
+
+	b, err := json.Marshal(&res)
+	if err != nil {
+		api.reqLogError(r, err.Error())
+		return nil, err
+	}
+	return b, nil
+}
+
+func (api *API) getOrderData(r *http.Request) ([]byte, error) {
+	var res []struct {
+		X   time.Time `json:"x" gorm:"column:x"`
+		Y   int       `json:"y" gorm:"column:y"`
+		Rev float32   `json:"rev" gorm:"column:rev"`
+	}
+	gMin, ok := r.URL.Query()["groupMinute"]
+	if !ok {
+		api.reqLogInfo(r, "groupMinute query parameter not found, defaulting to 1")
+		gMin = []string{"1"}
+	}
+	groupMinute, err := strconv.Atoi(gMin[0])
+	if err != nil {
+		api.reqLogError(r, "error converting groupMinute "+gMin[0]+" to integer: "+err.Error())
+		return nil, err
+	}
+
+	err = api.dm.Raw(fmt.Sprintf(`
+select ts x, sum(n) y, sum(revenue) rev
+from (
+	select
+		date_key + make_time(
+			extract(hour from date_key + time_key)::int,
+			cast(floor(extract(minute from date_key + time_key) / %d) * %d as int),
+			0
+		) ts
+		,n
+		,revenue
+	from mart.order_fact cf2
+) t
+group by ts
+order by ts`, groupMinute, groupMinute)).Scan(&res).Error
+	if err != nil {
+		api.reqLogError(r, err.Error())
+		return nil, err
+	}
+
+	b, err := json.Marshal(&res)
+	if err != nil {
+		api.reqLogError(r, err.Error())
+		return nil, err
+	}
+	return b, nil
 }

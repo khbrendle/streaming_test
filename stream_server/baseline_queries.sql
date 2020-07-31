@@ -21,6 +21,27 @@ from (
 group by ts
 order by ts;
 
+-- cumulative customers over time
+
+@set groupMinute = 2
+select ts n, sum(n) over (order by ts asc rows between unbounded preceding and current row) y
+from (
+	select ts, sum(n) n
+	from (
+		select 
+			date_key + make_time(
+				extract(hour from date_key + time_key)::int,
+				cast(floor(extract(minute from date_key + time_key) / ${groupMinute}) * ${groupMinute} as int),
+				0
+			) ts
+			,n
+		from customer_fact cf2
+	) t0
+	group by ts
+	order by ts
+) t
+;
+
 -- customer count by hour
 select dd.day_of_year , td.hour_24, td.the_minute , sum(cf.n) customer_count
 from customer_fact cf 

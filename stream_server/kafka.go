@@ -20,7 +20,7 @@ type Kafka struct {
 	// methods to keep both in sync
 	stLock sync.RWMutex
 	// list of topics to receive messages for
-	topics []string
+	topics *[]string
 	// map of channels for each topic to receive messages on
 	subs map[string]*MessageSub
 	// context controls closing the Kafka connection
@@ -38,15 +38,19 @@ type MessageSub struct {
 
 func KafkaInit() (k Kafka) {
 	var err error
+	var topicsArray []string
 	k = Kafka{
 		Brokers: []string{"127.0.0.1:9092"},
 		Version: "2.5.0",
 		Group:   "example",
 		// topics:   []string{"test"},
+		topics:   &topicsArray,
 		Assignor: "roundrobin",
 		Oldest:   false,
 	}
 
+	// this contains subscriptions
+	// key is Kafka topic, value contains counter and map of clients
 	k.subs = make(map[string]*MessageSub)
 
 	k.ready = make(chan bool)
@@ -85,7 +89,7 @@ func (k *Kafka) Connect() {
 		log.Panicf("Error creating consumer group client: %v", err)
 	}
 
-	go func() {
+	go func(kaf *Kafka) {
 		for {
 			// `Consume` should be called inside an infinite loop, when a
 			// server-side rebalance happens, the consumer session will need to be
@@ -93,14 +97,14 @@ func (k *Kafka) Connect() {
 
 			// log.Println("setting read lock of kafka info")
 			// k.stLock.RLock()
-			if len(k.topics) == 0 {
+			if len(*kaf.topics) == 0 {
 				// log.Println("no topics")
 				// log.Println("unsetting read lock of kafka info")
 				// k.stLock.RUnlock()
 				continue
 			}
-			log.Println("consuming messages")
-			if err := k.client.Consume(k.ctx, k.topics, k); err != nil {
+			log.Printf("consuming messages for topics %v\n", *kaf.topics)
+			if err := kaf.client.Consume(kaf.ctx, *kaf.topics, kaf); err != nil {
 				// free the lock on error
 				// log.Println("unsetting read lock of kafka info")
 				// k.stLock.RUnlock()
@@ -111,12 +115,12 @@ func (k *Kafka) Connect() {
 			// log.Println("unsetting read lock of kafka info")
 			// k.stLock.RUnlock()
 			// check if context was cancelled, signaling that the consumer should stop
-			if k.ctx.Err() != nil {
+			if kaf.ctx.Err() != nil {
 				return
 			}
-			k.ready = make(chan bool)
+			kaf.ready = make(chan bool)
 		}
-	}()
+	}(k)
 
 	<-k.ready // Await till the consumer has been set up
 	log.Println("Sarama consumer up and running!...")
@@ -149,7 +153,7 @@ func (k *Kafka) Subscribe(clientID *string, topic *string) {
 		log.Println("topic not yet subscribed")
 		// if topic not initialized, then add to list, start counter, & create channel
 		log.Println("addding topic to consumer list")
-		k.topics = append(k.topics, *topic)
+		*k.topics = append(*k.topics, *topic)
 
 		log.Println("initializing topic subscription information")
 		k.subs[*topic] = &MessageSub{
@@ -184,7 +188,7 @@ func (k *Kafka) Unsubscribe(clientID *string, topic *string) (err error) {
 		log.Println("last topic subscriber, removing Kafka consumer")
 
 		// remove topic from slice
-		if t, err = SliceRemoveString(k.topics, *topic); err != nil {
+		if t, err = SliceRemoveString(*k.topics, *topic); err != nil {
 			log.Println("unlocking kafka metadata")
 			k.stLock.Unlock()
 
@@ -192,7 +196,7 @@ func (k *Kafka) Unsubscribe(clientID *string, topic *string) (err error) {
 		}
 
 		log.Println("setting updated topics list")
-		k.topics = t
+		*k.topics = t
 
 		// delete subscription
 		log.Println("deleting topic subscription")
@@ -253,7 +257,7 @@ func (k *Kafka) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.C
 		ok    bool
 	)
 	for message := range claim.Messages() {
-		log.Printf("Message claimed: value = %s, timestamp = %v, topic = %s", string(message.Value), message.Timestamp, message.Topic)
+		// log.Printf("Message claimed: value = %s, timestamp = %v, topic = %s", string(message.Value), message.Timestamp, message.Topic)
 		session.MarkMessage(message, "")
 		// TODO: evaluate necessity of locks here
 		// there will only be single thread per topic so it should not need to lock
@@ -261,7 +265,7 @@ func (k *Kafka) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.C
 		// log.Println("locing kafka metadata")
 		// k.stLock.Lock()
 
-		log.Println("sending topic messges to clients")
+		// log.Println("sending topic messges to clients")
 		topic, ok = k.subs[message.Topic]
 		if !ok {
 			log.Printf("warn!!! no subscriptions for topic %s", message.Topic)
