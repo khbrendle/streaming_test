@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,7 +12,6 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/rs/xid"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 // API represents main program configuration
@@ -45,18 +43,24 @@ func (api *API) Init() error {
 	api.AllowedMethods = []string{"GET", "POST", "PUT", "HEAD", "OPTIONS"}
 	api.AllowedOrigins = []string{"*"}
 
-	api.RequestLogger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+	reqLoggerFileName := "stream_server_requests.log"
+	reqLoggerFile, err := os.OpenFile(reqLoggerFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		logger.Print("could not open request log file: " + err.Error())
+		api.RequestLogger = logger
+	} else {
+		api.RequestLogger = zerolog.New(reqLoggerFile).With().Timestamp().Logger()
+	}
 
 	r := mux.NewRouter()
 	api.SubRouter = r.PathPrefix(fmt.Sprintf("/v%s/", api.Version)).Subrouter()
 	api.AddRoutes()
 	r.Use(api.LoggingMiddleware)
 
-	var err error
 	api.dm, err = gorm.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s dbname=%s password=%s sslmode=%s",
 		"localhost", 5432, "postgres", "postgres", "webapp", "disable"))
 	if err != nil {
-		log.Fatal().Msg("error connecting to database: " + err.Error())
+		logger.Fatal().Msg("error connecting to database: " + err.Error())
 		os.Exit(1)
 	}
 
@@ -90,9 +94,10 @@ func (api *API) LoggingMiddleware(next http.Handler) http.Handler {
 func (api *API) reqLogError(r *http.Request, format string, v ...interface{}) {
 	rc, ok := FromRequestContext(r.Context())
 	if !ok {
-		panic(errors.New("error receiving RequestContext from http.Request"))
+		logger.Print("error receiving RequestContext from http.Request")
+	} else {
+		api.RequestLogger.Error().Str("request_id", rc.ID).Msgf(format, v...)
 	}
-	api.RequestLogger.Error().Str("request_id", rc.ID).Msgf(format, v...)
 }
 
 // warn
@@ -101,9 +106,10 @@ func (api *API) reqLogError(r *http.Request, format string, v ...interface{}) {
 func (api *API) reqLogInfo(r *http.Request, format string, v ...interface{}) {
 	rc, ok := FromRequestContext(r.Context())
 	if !ok {
-		panic(errors.New("error receiving RequestContext from http.Request"))
+		logger.Print("error receiving RequestContext from http.Request")
+	} else {
+		api.RequestLogger.Info().Str("request_id", rc.ID).Msgf(format, v...)
 	}
-	api.RequestLogger.Info().Str("request_id", rc.ID).Msgf(format, v...)
 }
 
 // debug
@@ -112,7 +118,8 @@ func (api *API) reqLogInfo(r *http.Request, format string, v ...interface{}) {
 func (api *API) reqLogTrace(r *http.Request, format string, v ...interface{}) {
 	rc, ok := FromRequestContext(r.Context())
 	if !ok {
-		panic(errors.New("error receiving RequestContext from http.Request"))
+		logger.Print("error receiving RequestContext from http.Request")
+	} else {
+		api.RequestLogger.Trace().Str("request_id", rc.ID).Msgf(format, v...)
 	}
-	api.RequestLogger.Trace().Str("request_id", rc.ID).Msgf(format, v...)
 }

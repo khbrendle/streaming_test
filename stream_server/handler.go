@@ -68,7 +68,7 @@ func (api *API) StreamMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	// log.Trace().Msg("initial data: " + string(b))
+	// logger.Trace().Msg("initial data: " + string(b))
 	fmt.Fprintf(w, "data: %s\n\n", string(b))
 	f.Flush()
 
@@ -100,8 +100,8 @@ func (api *API) StreamMessages(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) getCustomerData(r *http.Request) ([]byte, error) {
 	var res []struct {
-		X time.Time `json:"x" gorm:"column:x"`
-		Y int       `json:"y" gorm:"column:y"`
+		TimeStamp time.Time `json:"time_stamp" gorm:"column:time_stamp"`
+		N         int       `json:"n" gorm:"column:n"`
 	}
 	gMin, ok := r.URL.Query()["groupMinute"]
 	if !ok {
@@ -115,7 +115,7 @@ func (api *API) getCustomerData(r *http.Request) ([]byte, error) {
 	}
 
 	err = api.dm.Raw(fmt.Sprintf(`
-select ts x, sum(n) y
+select ts time_stamp, sum(n) n
 from (
 	select
 		date_key + make_time(
@@ -127,7 +127,7 @@ from (
 	from mart.customer_fact cf2
 ) t
 group by ts
-order by ts`, groupMinute, groupMinute)).Scan(&res).Error
+order by time_stamp`, groupMinute, groupMinute)).Scan(&res).Error
 	if err != nil {
 		api.reqLogError(r, err.Error())
 		return nil, err
@@ -143,9 +143,9 @@ order by ts`, groupMinute, groupMinute)).Scan(&res).Error
 
 func (api *API) getOrderData(r *http.Request) ([]byte, error) {
 	var res []struct {
-		X   time.Time `json:"x" gorm:"column:x"`
-		Y   int       `json:"y" gorm:"column:y"`
-		Rev float32   `json:"rev" gorm:"column:rev"`
+		TimeStamp time.Time `json:"time_stamp" gorm:"column:time_stamp"`
+		N         int       `json:"n" gorm:"column:n"`
+		Revenue   float32   `json:"revenue" gorm:"column:revenue"`
 	}
 	gMin, ok := r.URL.Query()["groupMinute"]
 	if !ok {
@@ -159,7 +159,7 @@ func (api *API) getOrderData(r *http.Request) ([]byte, error) {
 	}
 
 	err = api.dm.Raw(fmt.Sprintf(`
-select ts x, sum(n) y, sum(revenue) rev
+select ts time_stamp, sum(n) n, sum(revenue) revenue
 from (
 	select
 		date_key + make_time(
@@ -172,7 +172,7 @@ from (
 	from mart.order_fact cf2
 ) t
 group by ts
-order by ts`, groupMinute, groupMinute)).Scan(&res).Error
+order by time_stamp`, groupMinute, groupMinute)).Scan(&res).Error
 	if err != nil {
 		api.reqLogError(r, err.Error())
 		return nil, err

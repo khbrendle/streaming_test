@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"strings"
 	"time"
 
@@ -18,10 +17,10 @@ type KafkaConf struct {
 
 func (k *KafkaConf) Connect() error {
 	var err error
-	log.Println("initializing new sarama config")
+	logger.Print("initializing new sarama config")
 	k.saramaConf = sarama.NewConfig()
 
-	log.Println("setting Kafka config values")
+	logger.Print("setting Kafka config values")
 	k.saramaConf.Producer.RequiredAcks = sarama.WaitForLocal             // Only wait for the leader to ack
 	k.saramaConf.Producer.Flush.Frequency = *k.WaitMS * time.Millisecond // Flush batches every 500ms
 
@@ -34,7 +33,7 @@ func (k *KafkaConf) Connect() error {
 	brokerList := strings.Split(*k.Brokers, ",")
 
 	// Async producer
-	log.Println("starting async producer")
+	logger.Print("starting async producer")
 	k.producer, err = sarama.NewAsyncProducer(brokerList, k.saramaConf)
 	if err != nil {
 		return err
@@ -45,6 +44,6 @@ func (k *KafkaConf) Connect() error {
 func (k *KafkaConf) ListenForErrors() {
 	var err error
 	for err = range k.producer.Errors() {
-		log.Println("Failed to write access log entry:", err)
+		logger.Print("Failed to write access log entry:", err)
 	}
 }

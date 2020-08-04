@@ -1,7 +1,5 @@
 package main
 
-import "log"
-
 type PostgresConf struct {
 	Host     *string `yaml:"host"`
 	Port     *string `yaml:"port"`
@@ -19,7 +17,8 @@ func (p *PostgresConf) ConnectionString() (conn string) {
 	}
 	if p.Password != nil {
 		if p.User == nil {
-			log.Fatal("password supplied but no user")
+			logger.Print("password supplied but no user")
+			// TODO: this should be an error
 		}
 		conn += ":" + *p.Password
 	}
@@ -43,7 +42,7 @@ func (p *PostgresConf) ConnectionString() (conn string) {
 
 func (p *PostgresConf) CheckVars() {
 	if p.Host == nil {
-		log.Fatal("no Postgres hostname/ip address specified")
+		logger.Print("no Postgres hostname/ip address specified")
 	}
 	if p.Port == nil {
 		p.Port = String("5432")

@@ -1,8 +1,16 @@
-BIN=main
+bin_name=stream_test_db_init
+pid_file=$(bin_name).pid
 
-all: build run
+.IGNORE: stop
 
+all: build start
+
+clean:
+	rm *.log
 build:
-	go build -o $(BIN) .
-run:
-	./$(BIN)
+	go build -o $(bin_name) .
+start:
+	./$(bin_name) &
+
+stop:
+	@pkill -F $(pid_file) 2> /dev/null

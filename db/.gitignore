@@ -1,0 +1,4 @@
+main
+stream_test_db_init
+*.pid
+*.log

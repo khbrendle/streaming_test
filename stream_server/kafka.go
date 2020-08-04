@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"sync"
 
 	"github.com/Shopify/sarama"
@@ -38,7 +37,7 @@ type MessageSub struct {
 
 func KafkaInit() (k Kafka) {
 	var err error
-	var topicsArray []string
+	topicsArray := []string{"customer_count", "order_count"}
 	k = Kafka{
 		Brokers: []string{"127.0.0.1:9092"},
 		Version: "2.5.0",
@@ -53,6 +52,17 @@ func KafkaInit() (k Kafka) {
 	// key is Kafka topic, value contains counter and map of clients
 	k.subs = make(map[string]*MessageSub)
 
+	for _, topic := range topicsArray {
+
+		logger.Print("initializing topic subscription information for topic " + topic)
+		k.subs[topic] = &MessageSub{
+			// initialize connection count
+			counter: Uint32(1),
+			// initialize message channel
+			clients: make(map[string]*chan *sarama.ConsumerMessage),
+		}
+	}
+
 	k.ready = make(chan bool)
 	k.ctx, k.cancel = context.WithCancel(context.TODO())
 
@@ -60,7 +70,7 @@ func KafkaInit() (k Kafka) {
 
 	version, err := sarama.ParseKafkaVersion(k.Version)
 	if err != nil {
-		panic(err)
+		logger.Error().Msg(err.Error())
 	}
 	k.Config.Version = version
 
@@ -72,7 +82,7 @@ func KafkaInit() (k Kafka) {
 	case "range":
 		k.Config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRange
 	default:
-		log.Panicf("Unrecognized consumer group partition assignor: %s", k.Assignor)
+		logger.Warn().Msgf("Unrecognized consumer group partition assignor: %s", k.Assignor)
 	}
 
 	if k.Oldest {
@@ -86,7 +96,7 @@ func (k *Kafka) Connect() {
 
 	k.client, err = sarama.NewConsumerGroup(k.Brokers, k.Group, k.Config)
 	if err != nil {
-		log.Panicf("Error creating consumer group client: %v", err)
+		logger.Error().Msgf("Error creating consumer group client: %v", err)
 	}
 
 	go func(kaf *Kafka) {
@@ -97,19 +107,19 @@ func (k *Kafka) Connect() {
 
 			// log.Println("setting read lock of kafka info")
 			// k.stLock.RLock()
-			if len(*kaf.topics) == 0 {
-				// log.Println("no topics")
-				// log.Println("unsetting read lock of kafka info")
-				// k.stLock.RUnlock()
-				continue
-			}
-			log.Printf("consuming messages for topics %v\n", *kaf.topics)
+			// if len(*kaf.topics) == 0 {
+			// 	// log.Println("no topics")
+			// 	// log.Println("unsetting read lock of kafka info")
+			// 	// k.stLock.RUnlock()
+			// 	continue
+			// }
+			logger.Printf("consuming messages for topics %v\n", *kaf.topics)
 			if err := kaf.client.Consume(kaf.ctx, *kaf.topics, kaf); err != nil {
 				// free the lock on error
 				// log.Println("unsetting read lock of kafka info")
 				// k.stLock.RUnlock()
 
-				log.Printf("Error from consumer: %v", err)
+				logger.Printf("Error from consumer: %v", err)
 			}
 
 			// log.Println("unsetting read lock of kafka info")
@@ -123,7 +133,7 @@ func (k *Kafka) Connect() {
 	}(k)
 
 	<-k.ready // Await till the consumer has been set up
-	log.Println("Sarama consumer up and running!...")
+	logger.Print("Sarama consumer up and running!...")
 
 	// context cancel func to stop Kafka connection
 	<-k.ctx.Done()
@@ -137,37 +147,38 @@ func (k *Kafka) TopicSubscribed(topic *string) (exists bool) {
 
 func (k *Kafka) Subscribe(clientID *string, topic *string) {
 	// update topics slice
-	log.Println("locking kafka metadata")
+	logger.Print("locking kafka metadata")
 	k.stLock.Lock()
 	// Check if the topic has been initialized
-	if k.TopicSubscribed(topic) {
-		log.Println("topic subscribed")
-		// if yes then increment counter
-		log.Println("getting topic counter")
-		c := k.subs[*topic].counter
+	// if k.TopicSubscribed(topic) { // TODO: using individual consumers per topic would use this
+	logger.Print("topic subscribed")
+	// if yes then increment counter
+	logger.Print("getting topic counter")
+	c := k.subs[*topic].counter
 
-		log.Println("setting incrementd topic counter")
-		k.subs[*topic].counter = Uint32(*c + 1)
+	logger.Print("setting incrementd topic counter")
+	k.subs[*topic].counter = Uint32(*c + 1)
 
-	} else {
-		log.Println("topic not yet subscribed")
-		// if topic not initialized, then add to list, start counter, & create channel
-		log.Println("addding topic to consumer list")
-		*k.topics = append(*k.topics, *topic)
+	// TODO: using individual consumers per topic would use this
+	// } else {
+	// 	log.Println("topic not yet subscribed")
+	// 	// if topic not initialized, then add to list, start counter, & create channel
+	// 	log.Println("addding topic to consumer list")
+	// 	*k.topics = append(*k.topics, *topic)
+	//
+	// 	log.Println("initializing topic subscription information")
+	// 	k.subs[*topic] = &MessageSub{
+	// 		// initialize connection count
+	// 		counter: Uint32(1),
+	// 		// initialize message channel
+	// 		clients: make(map[string]*chan *sarama.ConsumerMessage),
+	// 	}
+	// }
 
-		log.Println("initializing topic subscription information")
-		k.subs[*topic] = &MessageSub{
-			// initialize connection count
-			counter: Uint32(1),
-			// initialize message channel
-			clients: make(map[string]*chan *sarama.ConsumerMessage),
-		}
-	}
-
-	log.Println("initializing client channel")
+	logger.Print("initializing client channel")
 	k.subs[*topic].clients[*clientID] = NewChannel()
 
-	log.Println("unlocking kafka metadata")
+	logger.Print("unlocking kafka metadata")
 	k.stLock.Unlock()
 
 	return
@@ -175,47 +186,48 @@ func (k *Kafka) Subscribe(clientID *string, topic *string) {
 
 // Removing topics requires careful usage of locks
 func (k *Kafka) Unsubscribe(clientID *string, topic *string) (err error) {
-	var t []string
+	// var t []string
 
-	log.Println("locking kafka metadata")
+	logger.Print("locking kafka metadata")
 	k.stLock.Lock()
 
-	log.Println("getting topic counter")
+	logger.Print("getting topic counter")
 	c := k.subs[*topic].counter
 	// if removing last subscriptoin, then stop consuming from Kafka
 
-	if *c == 1 {
-		log.Println("last topic subscriber, removing Kafka consumer")
-
-		// remove topic from slice
-		if t, err = SliceRemoveString(*k.topics, *topic); err != nil {
-			log.Println("unlocking kafka metadata")
-			k.stLock.Unlock()
-
-			return err
-		}
-
-		log.Println("setting updated topics list")
-		*k.topics = t
-
-		// delete subscription
-		log.Println("deleting topic subscription")
-		delete(k.subs, *topic)
-
-		log.Println("unlocking kafka metadata")
-		k.stLock.Unlock()
-
-		return nil
-	}
+	// TODO: using individual consumers per topic would use this
+	// if *c == 1 {
+	// 	log.Println("last topic subscriber, removing Kafka consumer")
+	//
+	// 	// remove topic from slice
+	// 	if t, err = SliceRemoveString(*k.topics, *topic); err != nil {
+	// 		log.Println("unlocking kafka metadata")
+	// 		k.stLock.Unlock()
+	//
+	// 		return err
+	// 	}
+	//
+	// 	log.Println("setting updated topics list")
+	// 	*k.topics = t
+	//
+	// 	// delete subscription
+	// 	log.Println("deleting topic subscription")
+	// 	delete(k.subs, *topic)
+	//
+	// 	log.Println("unlocking kafka metadata")
+	// 	k.stLock.Unlock()
+	//
+	// 	return nil
+	// }
 
 	// otherwise decrement the counter
-	log.Println("setting updated counter")
+	logger.Print("setting updated counter")
 	k.subs[*topic].counter = Uint32(*c - 1)
 
-	log.Println("removing client channel")
+	logger.Print("removing client channel")
 	delete(k.subs[*topic].clients, *clientID)
 
-	log.Println("unlocking kafka metadata")
+	logger.Print("unlocking kafka metadata")
 	k.stLock.Unlock()
 
 	return nil
@@ -257,7 +269,7 @@ func (k *Kafka) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.C
 		ok    bool
 	)
 	for message := range claim.Messages() {
-		// log.Printf("Message claimed: value = %s, timestamp = %v, topic = %s", string(message.Value), message.Timestamp, message.Topic)
+		logger.Printf("Message claimed: value = %s, timestamp = %v, topic = %s", string(message.Value), message.Timestamp, message.Topic)
 		session.MarkMessage(message, "")
 		// TODO: evaluate necessity of locks here
 		// there will only be single thread per topic so it should not need to lock
@@ -268,7 +280,7 @@ func (k *Kafka) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.C
 		// log.Println("sending topic messges to clients")
 		topic, ok = k.subs[message.Topic]
 		if !ok {
-			log.Printf("warn!!! no subscriptions for topic %s", message.Topic)
+			// log.Printf("warn!!! no subscriptions for topic %s", message.Topic)
 			continue
 		}
 		for _, ch := range topic.clients {

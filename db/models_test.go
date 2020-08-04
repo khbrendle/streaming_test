@@ -11,7 +11,7 @@ func TestNewDateDimension(t *testing.T) {
 
 	dim := NewDateDimension(&dt)
 
-	if dim.DateKey != 20091110 {
+	if dim.DateKey != dt {
 		t.Error("incorrect DateKey")
 	}
 	if dim.TheDate != dt {
@@ -57,7 +57,7 @@ func TestNewTimeDimension(t *testing.T) {
 
 	dim := NewTimeDimension(&dt)
 
-	if dim.TimeKey != 131530 {
+	if dim.TimeKey != dt {
 		t.Error("incorrect TimeKey")
 	}
 	if dim.Hour12 != 1 {

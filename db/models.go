@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 	"text/template"
@@ -201,10 +200,10 @@ func valueToSQL(v reflect.Value) (val string) {
 		case "Time":
 			val = v.Interface().(time.Time).String()
 		default:
-			log.Println("unhandled struct type: " + v.Type().Name())
+			logger.Print("unhandled struct type: " + v.Type().Name())
 		}
 	default:
-		log.Printf("unhandled type %+v\n", v.Type())
+		logger.Printf("unhandled type %+v", v.Type())
 	}
 	return
 }

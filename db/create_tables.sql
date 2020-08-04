@@ -53,9 +53,9 @@ declare
 	_resp json;
 	chan_res text;
   begin
-	select jsonb_build_object( 
-		'timestamp', new.date_key + new.time_key, 
-		'n', new.n ) into _resp;
+	select jsonb_build_array(jsonb_build_object( 
+		'time_stamp', new.date_key + new.time_key, 
+		'n', new.n )) into _resp;
 	  
     --notify "customer", _resp::text;
     select pg_notify('customer', _resp::text) into chan_res;
@@ -77,6 +77,25 @@ create table order_fact (
 	revenue decimal(50, 5)
 );
 
+drop function if exists notify_order_fact_tr_fn cascade;
+create function notify_order_fact_tr_fn() returns trigger as $tr$
+declare 
+	_resp json;
+	chan_res text;
+  begin
+	select jsonb_build_array(jsonb_build_object( 
+		'time_stamp', new.date_key + new.time_key, 
+		'order_count', 1,
+		'n', new.n,
+		'revenue', new.revenue )) into _resp;
+	  
+    select pg_notify('order', _resp::text) into chan_res;
+    return new;
+  end;
+$tr$ language plpgsql;
+
+create trigger notify_order_fact_tr after insert on order_fact
+  for each row execute function notify_order_fact_tr_fn();
 
 
 /*

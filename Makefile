@@ -2,9 +2,38 @@ DOCKER_PG=stream-test-pg
 DOCKER_ZOOKEEPER=stream-test-zookeeper
 DOCKER_KAFKA=stream-test-kafka
 
+ui-start:
+	$(MAKE) -C ui run
 
+stream-start:
+	@echo 'setting up database'
+	$(MAKE) -C db all
+	@echo 'starting Postgres listener'
+	$(MAKE) -C postgres_producer all
+	@echo 'starting backend web server'
+	$(MAKE) -C stream_server all
+	@echo 'generating data'
+	$(MAKE) -C generate_data all
+stream-stop:
+	@echo 'stopping initializing db'
+	@$(MAKE) -C db stop
+	@echo 'stopping generating data'
+	@$(MAKE) -C generate_data stop
+	@echo 'stopping Postgres listener'
+	@$(MAKE) -C postgres_producer stop
+	@echo 'stopping backend web server'
+	@$(MAKE) -C stream_server stop
+
+
+docekr-init-all: postgres-docker-init zookeeper-docker-init kafka-docker-init
+	@echo 'initializing all dockers'
+docekr-start-all: postgres-docker-start zookeeper-docker-start kafka-docker-start
+	@echo 'starting all dockers'
+docekr-stop-all: postgres-docker-stop zookeeper-docker-stop kafka-docker-stop
+	@echo 'stopping all dockers'
 docker-delete-all: postgres-docker-delete zookeeper-docker-delete kafka-docker-delete
-	@echo 'all dockers destroyed'
+	@echo 'deleting all dockers'
+
 
 postgres-docker-init:
 	docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=webapp --name=$(DOCKER_PG) postgres
@@ -14,8 +43,6 @@ postgres-docker-stop:
 	docker stop $(DOCKER_PG)
 postgres-docker-delete:
 	-docker rm $(DOCKER_PG)
-postgres-db-init:
-	psql -h localhost -p 5432 -U postgres -f db/create_tables.sql
 
 
 zookeeper-docker-init:

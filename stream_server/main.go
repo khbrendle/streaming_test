@@ -1,20 +1,43 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
+
+	"github.com/rs/zerolog"
 )
 
-func main() {
-	log.Printf("Running pid: %d", os.Getpid())
+var logger zerolog.Logger
 
-	var err error
+func main() {
+	prog := os.Args[0]
+	logFileName := prog + ".log"
+	logFile, err := os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal("could not open log file: " + err.Error())
+		os.Exit(1)
+	}
+
+	logger = zerolog.New(logFile).With().Timestamp().Str("service", "stream_server").Logger()
+	pidFile := prog + ".pid"
+	pid := os.Getpid()
+	logger.Print("Running pid: %d", pid)
+
+	err = ioutil.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0600)
+	if err != nil {
+		logger.Print("error writing pid file: " + err.Error())
+		os.Exit(1)
+	}
+
 	var api API
 	if err = api.Init(); err != nil {
-		panic(err)
+		logger.Print("error initializing API server: " + err.Error())
+		os.Exit(1)
 	}
 
 	// run Kafka consumer manager on a thread
@@ -25,10 +48,10 @@ func main() {
 
 	// run REST service on a thread
 	go func(server *http.Server) {
-		log.Printf("starting api server at %s", server.Addr)
+		logger.Printf("starting api server at %s", server.Addr)
 		err := server.ListenAndServe()
-		if err != nil {
-			panic(err)
+		if err != nil && err != http.ErrServerClosed {
+			logger.Print("error starting API server: " + err.Error())
 		}
 	}(api.Server)
 
@@ -37,14 +60,23 @@ func main() {
 	// this will block until context is cancelled or program cancelled
 	select {
 	case <-sigterm:
-		log.Println("terminating: via signal")
+		logger.Print("terminating: via signal")
 	}
 
-	log.Println("closing Kafka consumer")
+	logger.Print("closing Kafka consumer")
 	api.Kafka.cancel()
 	if err = api.Kafka.client.Close(); err != nil {
-		log.Panicf("Error closing client: %v", err)
+		logger.Print("Error closing client: +", err.Error())
+		os.Exit(1)
 	}
-	log.Println("closing server")
+	logger.Print("closing server")
 	api.Server.Close()
+
+	err = os.Remove(pidFile)
+	if err != nil {
+		logger.Print("error removing pid file: " + err.Error())
+		os.Exit(1)
+	}
+
+	logger.Print("service stopped")
 }
