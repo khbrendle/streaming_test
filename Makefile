@@ -25,11 +25,11 @@ stream-stop:
 	@$(MAKE) -C stream_server stop
 
 
-docekr-init-all: postgres-docker-init zookeeper-docker-init kafka-docker-init
+docker-init-all: postgres-docker-init zookeeper-docker-init kafka-docker-init
 	@echo 'initializing all dockers'
-docekr-start-all: postgres-docker-start zookeeper-docker-start kafka-docker-start
+docker-start-all: postgres-docker-start zookeeper-docker-start kafka-docker-start
 	@echo 'starting all dockers'
-docekr-stop-all: postgres-docker-stop zookeeper-docker-stop kafka-docker-stop
+docker-stop-all: postgres-docker-stop zookeeper-docker-stop kafka-docker-stop
 	@echo 'stopping all dockers'
 docker-delete-all: postgres-docker-delete zookeeper-docker-delete kafka-docker-delete
 	@echo 'deleting all dockers'

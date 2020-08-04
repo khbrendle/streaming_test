@@ -27,7 +27,7 @@ To set up this demo application we will need to run a few containers
 ### Running
 With the containers set up we get get it all running.
 
-main directory makefile has 2 commands:
+main directory makefile has a few main commands:
   - `make ui-start` will run the node UI server with hot-reload in dev mode
 
   - `make stream-start` will initialize the database tables, start the postgres listener/producer, start generating data, start the API server
