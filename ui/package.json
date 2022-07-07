@@ -16,7 +16,7 @@
     "svelte": "^3.0.0"
   },
   "dependencies": {
-    "moment": "^2.27.0",
+    "moment": "^2.29.4",
     "sirv-cli": "^0.4.4",
     "svelte-calendar": "^1.5.0",
     "vis-data": "^6.6.1",
